@@ -32,8 +32,8 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let config_path = env::var("HYBRIDROUTE_CONFIG")
-        .unwrap_or_else(|_| "config/hybridroute.toml".to_string());
+    let config_path =
+        env::var("HYBRIDROUTE_CONFIG").unwrap_or_else(|_| "config/hybridroute.toml".to_string());
     let config = AppConfig::load(&config_path).await?;
     init_tracing(config.server.json_logs);
 

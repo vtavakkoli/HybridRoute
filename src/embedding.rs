@@ -8,9 +8,9 @@ use serde::{Deserialize, Serialize};
 use crate::config::{EmbeddingConfig, EmbeddingMode};
 
 #[cfg(feature = "local-embeddings")]
-use std::sync::Mutex;
-#[cfg(feature = "local-embeddings")]
 use fastembed::{EmbeddingModel, TextEmbedding, TextInitOptions};
+#[cfg(feature = "local-embeddings")]
+use std::sync::Mutex;
 
 #[derive(Clone)]
 pub struct EmbeddingEngine {
@@ -21,7 +21,9 @@ pub struct EmbeddingEngine {
 
 enum Backend {
     Disabled,
-    Hashing { dimensions: usize },
+    Hashing {
+        dimensions: usize,
+    },
     Remote(RemoteBackend),
     #[cfg(feature = "local-embeddings")]
     Local(Arc<Mutex<TextEmbedding>>),
@@ -157,7 +159,9 @@ impl EmbeddingEngine {
                     let mut vectors = model
                         .embed(vec![text], None)
                         .context("local embedding inference failed")?;
-                    vectors.pop().context("local embedding model returned no vector")
+                    vectors
+                        .pop()
+                        .context("local embedding model returned no vector")
                 })
                 .await
                 .context("local embedding task failed")?
@@ -242,8 +246,8 @@ fn hashing_embedding(text: &str, dimensions: usize) -> Vec<f32> {
 fn add_feature(vector: &mut [f32], feature: &str, weight: f32) {
     let hash = blake3::hash(feature.as_bytes());
     let bytes = hash.as_bytes();
-    let index = u64::from_le_bytes(bytes[0..8].try_into().expect("slice length")) as usize
-        % vector.len();
+    let index =
+        u64::from_le_bytes(bytes[0..8].try_into().expect("slice length")) as usize % vector.len();
     let sign = if bytes[8] & 1 == 0 { 1.0 } else { -1.0 };
     vector[index] += weight * sign;
 }
