@@ -121,7 +121,7 @@ impl RouterEngine {
                 .then_with(|| left.route_id.cmp(&right.route_id))
         });
 
-        let top_k = context.top_k.max(1).min(20);
+        let top_k = context.top_k.clamp(1, 20);
         let visible = candidates.iter().take(top_k).cloned().collect::<Vec<_>>();
         Ok(self.select(candidates, visible, &context.sticky_key))
     }
