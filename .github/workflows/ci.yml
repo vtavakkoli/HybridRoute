@@ -30,7 +30,7 @@ jobs:
       - name: Build and start the complete demo
         run: docker compose up --build --detach
       - name: Run end-to-end routing checks
-        run: ./scripts/smoke-test.sh
+        run: bash ./scripts/smoke-test.sh
       - name: Show container logs
         if: always()
         run: docker compose logs --no-color
