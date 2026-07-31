@@ -76,7 +76,12 @@ pub async fn proxy_request(
         .get(header::CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
         .map(str::to_string);
-    let text = extract_routing_text(&state.config, &parts.headers, content_type.as_deref(), &body)?;
+    let text = extract_routing_text(
+        &state.config,
+        &parts.headers,
+        content_type.as_deref(),
+        &body,
+    )?;
     if text.trim().is_empty() {
         return Err(ApiError::unprocessable(
             "no routing text found; provide X-Semantic-Query or a configured JSON field",
@@ -143,12 +148,9 @@ pub async fn proxy_request(
         .map_err(|error| ApiError::bad_gateway(format!("upstream request failed: {error}")))?;
     let status = upstream.status();
     let upstream_headers = upstream.headers().clone();
-    let response_body = upstream
-        .bytes()
-        .await
-        .map_err(|error| {
-            ApiError::bad_gateway(format!("failed to read upstream response: {error}"))
-        })?;
+    let response_body = upstream.bytes().await.map_err(|error| {
+        ApiError::bad_gateway(format!("failed to read upstream response: {error}"))
+    })?;
 
     let mut response = Response::builder().status(status);
     for (name, value) in &upstream_headers {
@@ -291,6 +293,12 @@ impl From<anyhow::Error> for ApiError {
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        (self.status, Json(ErrorBody { error: self.message })).into_response()
+        (
+            self.status,
+            Json(ErrorBody {
+                error: self.message,
+            }),
+        )
+            .into_response()
     }
 }

@@ -83,7 +83,6 @@ impl RouterEngine {
 
         let mut candidates = Vec::with_capacity(eligible_routes.len());
         for route in eligible_routes {
-
             let lexical = (!route.config.keywords.is_empty()).then(|| {
                 keyword_score(
                     &normalized,
@@ -133,7 +132,10 @@ impl RouterEngine {
         visible: Vec<CandidateScore>,
         sticky_key: &str,
     ) -> RouteDecision {
-        let fallback = candidates.iter().find(|candidate| candidate.fallback).cloned();
+        let fallback = candidates
+            .iter()
+            .find(|candidate| candidate.fallback)
+            .cloned();
         let ranked = candidates
             .iter()
             .filter(|candidate| !candidate.fallback)
@@ -144,15 +146,14 @@ impl RouterEngine {
             return fallback_decision(fallback, visible, "no eligible routes");
         };
 
-        let second_score = ranked.get(1).map(|candidate| candidate.score).unwrap_or(0.0);
+        let second_score = ranked
+            .get(1)
+            .map(|candidate| candidate.score)
+            .unwrap_or(0.0);
         let margin = (top.score - second_score).max(0.0);
 
         if top.score < self.config.decision.minimum_score {
-            return fallback_decision(
-                fallback,
-                visible,
-                "best route is below the minimum score",
-            );
+            return fallback_decision(fallback, visible, "best route is below the minimum score");
         }
 
         if top.score >= self.config.decision.confident_score
@@ -173,11 +174,7 @@ impl RouterEngine {
         if ambiguous {
             match self.config.decision.ambiguity_strategy {
                 AmbiguityStrategy::Fallback => {
-                    return fallback_decision(
-                        fallback,
-                        visible,
-                        "ambiguous route scores",
-                    );
+                    return fallback_decision(fallback, visible, "ambiguous route scores");
                 }
                 AmbiguityStrategy::Top1 => {
                     let confidence = top.score;
@@ -246,10 +243,11 @@ fn eligible(route: &RouteConfig, context: &RoutingContext, roles: &HashSet<Strin
 
     let content_matches = route.content_types.is_empty()
         || context.content_type.as_ref().is_some_and(|content_type| {
-            route
-                .content_types
-                .iter()
-                .any(|allowed| content_type.to_lowercase().starts_with(&allowed.to_lowercase()))
+            route.content_types.iter().any(|allowed| {
+                content_type
+                    .to_lowercase()
+                    .starts_with(&allowed.to_lowercase())
+            })
         });
     if !content_matches {
         return false;

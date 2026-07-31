@@ -42,7 +42,9 @@ impl AppConfig {
             self.scoring.quality_weight,
         ];
         anyhow::ensure!(
-            weights.iter().all(|weight| weight.is_finite() && *weight >= 0.0),
+            weights
+                .iter()
+                .all(|weight| weight.is_finite() && *weight >= 0.0),
             "scoring weights must be finite and non-negative"
         );
         anyhow::ensure!(
@@ -73,7 +75,10 @@ impl AppConfig {
             self.decision.temperature.is_finite() && self.decision.temperature > 0.0,
             "decision.temperature must be finite and greater than zero"
         );
-        anyhow::ensure!(self.decision.top_k > 0, "decision.top_k must be greater than zero");
+        anyhow::ensure!(
+            self.decision.top_k > 0,
+            "decision.top_k must be greater than zero"
+        );
         anyhow::ensure!(
             self.embedding.dimensions >= 32,
             "embedding.dimensions must be at least 32"
@@ -96,10 +101,19 @@ impl AppConfig {
         let mut fallback_count = 0usize;
         for route in &self.routes {
             anyhow::ensure!(!route.id.trim().is_empty(), "route id must not be empty");
-            anyhow::ensure!(ids.insert(route.id.clone()), "duplicate route id: {}", route.id);
-            anyhow::ensure!(!route.target.trim().is_empty(), "route {} has no target", route.id);
-            let target = url::Url::parse(&route.target)
-                .with_context(|| format!("route {} target is not a valid absolute URL", route.id))?;
+            anyhow::ensure!(
+                ids.insert(route.id.clone()),
+                "duplicate route id: {}",
+                route.id
+            );
+            anyhow::ensure!(
+                !route.target.trim().is_empty(),
+                "route {} has no target",
+                route.id
+            );
+            let target = url::Url::parse(&route.target).with_context(|| {
+                format!("route {} target is not a valid absolute URL", route.id)
+            })?;
             anyhow::ensure!(
                 matches!(target.scheme(), "http" | "https"),
                 "route {} target must use http or https",
@@ -121,7 +135,10 @@ impl AppConfig {
                 fallback_count += 1;
             }
         }
-        anyhow::ensure!(fallback_count <= 1, "only one route may be marked as fallback");
+        anyhow::ensure!(
+            fallback_count <= 1,
+            "only one route may be marked as fallback"
+        );
         Ok(())
     }
 }

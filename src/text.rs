@@ -20,7 +20,9 @@ pub fn normalize_text(text: &str, max_chars: usize) -> String {
 }
 
 pub fn tokenize(text: &str) -> HashSet<&str> {
-    text.split_whitespace().filter(|token| !token.is_empty()).collect()
+    text.split_whitespace()
+        .filter(|token| !token.is_empty())
+        .collect()
 }
 
 pub fn keyword_score(
@@ -34,7 +36,11 @@ pub fn keyword_score(
 
     let tokens = tokenize(normalized_text);
     let mut matched = 0.0f32;
-    let total = positive.values().copied().filter(|weight| *weight > 0.0).sum::<f32>();
+    let total = positive
+        .values()
+        .copied()
+        .filter(|weight| *weight > 0.0)
+        .sum::<f32>();
 
     for (phrase, weight) in positive {
         if *weight <= 0.0 {
