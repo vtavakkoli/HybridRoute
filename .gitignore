@@ -1,0 +1,7 @@
+/target
+.env
+*.log
+.fastembed_cache
+.DS_Store
+.idea
+.vscode

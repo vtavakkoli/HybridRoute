@@ -1,0 +1,49 @@
+services:
+  nginx:
+    image: nginx:1.29-alpine
+    ports:
+      - "8088:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      hybridroute:
+        condition: service_healthy
+
+  hybridroute:
+    build: .
+    environment:
+      HYBRIDROUTE_CONFIG: /app/config/hybridroute.toml
+      RUST_LOG: hybridroute=info,tower_http=info
+    volumes:
+      - ./config/hybridroute.toml:/app/config/hybridroute.toml:ro
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    depends_on:
+      - streetlight-api
+      - parking-api
+      - invoice-api
+      - general-api
+
+  streetlight-api:
+    build: ./examples/mock-api
+    environment:
+      SERVICE_NAME: streetlight-api
+
+  parking-api:
+    build: ./examples/mock-api
+    environment:
+      SERVICE_NAME: parking-api
+
+  invoice-api:
+    build: ./examples/mock-api
+    environment:
+      SERVICE_NAME: invoice-api
+
+  general-api:
+    build: ./examples/mock-api
+    environment:
+      SERVICE_NAME: general-api

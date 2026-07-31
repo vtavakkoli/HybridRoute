@@ -1,0 +1,135 @@
+[server]
+bind = "0.0.0.0:8080"
+max_body_bytes = 1048576
+request_timeout_ms = 30000
+json_logs = false
+
+[proxy]
+connect_timeout_ms = 2000
+upstream_timeout_ms = 30000
+preserve_query = true
+add_decision_headers = true
+
+[extraction]
+routing_text_header = "x-semantic-query"
+role_header = "x-user-roles"
+domain_header = "x-route-domain"
+sticky_header = "x-conversation-id"
+json_pointers = ["/query", "/text", "/message", "/description", "/messages/0/content"]
+max_semantic_chars = 4096
+
+[scoring]
+embedding_weight = 0.50
+keyword_weight = 0.25
+metadata_weight = 0.20
+quality_weight = 0.05
+
+[decision]
+minimum_score = 0.35
+confident_score = 0.78
+confident_margin = 0.12
+ambiguity_margin = 0.05
+ambiguity_strategy = "fallback"
+temperature = 0.10
+top_k = 5
+
+# Zero-download baseline. For real semantic embeddings, switch to remote_openai
+# or compile with --features local-embeddings and use local_fastembed.
+[embedding]
+mode = "hashing"
+dimensions = 384
+timeout_ms = 1000
+cache_entries = 10000
+fail_open = true
+
+[[routes]]
+id = "streetlight-report"
+target = "http://streetlight-api:8080"
+rewrite_path = "/v1/reports/streetlights"
+description = "Report broken, damaged, blinking, dark, or unavailable public streetlights and road lighting."
+examples = [
+  "The streetlight outside my house is broken",
+  "A public lamp is blinking continuously",
+  "The road is dark because the lighting does not work"
+]
+methods = ["POST"]
+content_types = ["application/json"]
+domains = ["infrastructure", "city-services"]
+required_roles_any = ["citizen", "service-agent"]
+quality = 1.0
+safe_for_exploration = false
+
+[routes.keywords]
+streetlight = 1.8
+lamp = 1.1
+lighting = 1.2
+broken = 1.0
+blinking = 1.4
+dark = 0.7
+
+[routes.negative_keywords]
+parking = 1.2
+payment = 1.5
+
+[[routes]]
+id = "parking-permit"
+target = "http://parking-api:8080"
+rewrite_path = "/v1/permits/parking"
+description = "Apply for, renew, update, or cancel a residential parking permit."
+examples = [
+  "Renew my parking permit",
+  "Change the address on my residential permit",
+  "I need a parking permit for my district"
+]
+methods = ["POST"]
+content_types = ["application/json"]
+domains = ["mobility", "city-services"]
+required_roles_any = ["citizen", "service-agent"]
+quality = 1.0
+safe_for_exploration = false
+
+[routes.keywords]
+parking = 1.3
+permit = 1.8
+resident = 1.0
+renew = 1.3
+renewal = 1.3
+address = 0.5
+
+[routes.negative_keywords]
+streetlight = 1.5
+invoice = 1.0
+
+[[routes]]
+id = "invoice-processing"
+target = "http://invoice-api:8080"
+rewrite_path = "/v1/documents/invoices"
+description = "Classify, validate, extract, or process invoices and billing documents."
+examples = [
+  "Process this supplier invoice",
+  "Extract the invoice number and total",
+  "Validate a billing document"
+]
+methods = ["POST"]
+content_types = ["application/json", "text/plain"]
+domains = ["finance", "documents"]
+required_roles_any = ["finance-user", "service-agent"]
+quality = 0.95
+safe_for_exploration = false
+
+[routes.keywords]
+invoice = 1.8
+billing = 1.2
+supplier = 0.8
+total = 0.5
+extract = 0.7
+
+[[routes]]
+id = "general-intake"
+target = "http://general-api:8080"
+rewrite_path = "/v1/intake"
+description = "General intake for requests that cannot be routed confidently."
+methods = ["POST"]
+quality = 0.5
+safe_for_exploration = false
+fallback = true

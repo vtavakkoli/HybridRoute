@@ -1,0 +1,10 @@
+{"text":"The public streetlight outside my apartment is broken","method":"POST","content_type":"application/json","domain":"city-services","roles":["citizen"],"expected_route":"streetlight-report"}
+{"text":"A road lamp keeps blinking throughout the night","method":"POST","content_type":"application/json","domain":"infrastructure","roles":["service-agent"],"expected_route":"streetlight-report"}
+{"text":"The street is dark because public lighting failed","method":"POST","content_type":"application/json","domain":"infrastructure","roles":["citizen"],"expected_route":"streetlight-report"}
+{"text":"I need to renew my residential parking permit","method":"POST","content_type":"application/json","domain":"mobility","roles":["citizen"],"expected_route":"parking-permit"}
+{"text":"Change the address on my parking permit","method":"POST","content_type":"application/json","domain":"city-services","roles":["service-agent"],"expected_route":"parking-permit"}
+{"text":"Apply for a parking permit in my district","method":"POST","content_type":"application/json","domain":"mobility","roles":["citizen"],"expected_route":"parking-permit"}
+{"text":"Extract the invoice number and total","method":"POST","content_type":"application/json","domain":"finance","roles":["finance-user"],"expected_route":"invoice-processing"}
+{"text":"Validate this supplier billing document","method":"POST","content_type":"application/json","domain":"documents","roles":["service-agent"],"expected_route":"invoice-processing"}
+{"text":"Process the attached invoice","method":"POST","content_type":"text/plain","domain":"finance","roles":["finance-user"],"expected_route":"invoice-processing"}
+{"text":"I need general help with a city service","method":"POST","content_type":"application/json","domain":"city-services","roles":["citizen"],"expected_route":"general-intake"}

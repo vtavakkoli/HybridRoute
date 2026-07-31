@@ -1,0 +1,10 @@
+# Replace the [embedding] section in hybridroute.toml with this configuration
+# for an OpenAI-compatible local or hosted embedding endpoint.
+[embedding]
+mode = "remote_openai"
+endpoint = "http://embedding-service:8080/v1/embeddings"
+model = "sentence-transformers/all-MiniLM-L6-v2"
+api_key_env = "HYBRIDROUTE_EMBEDDING_API_KEY"
+timeout_ms = 1000
+cache_entries = 50000
+fail_open = true
