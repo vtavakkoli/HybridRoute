@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: "If you use HybridRoute in research or engineering work, please cite this software."
+title: "HybridRoute: Policy-Aware Semantic API Routing"
+type: software
+authors:
+  - family-names: Tavakkoli
+    given-names: Vahid
+version: 0.2.0
+license: MIT
+repository-code: "https://github.com/vtavakkoli/HybridRoute"
+url: "https://github.com/vtavakkoli/HybridRoute"
+abstract: >-
+  HybridRoute is a gateway-independent semantic API router written in Rust.
+  It combines policy filtering, BM25 lexical retrieval, deterministic
+  approximate-nearest-neighbour retrieval, embeddings, metadata, schema
+  compatibility, route health, and bounded quality signals to select APIs,
+  services, workflows, or AI endpoints.
+keywords:
+  - semantic routing
+  - API gateway
+  - reverse proxy
+  - embeddings
+  - Rust

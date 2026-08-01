@@ -1,0 +1,99 @@
+name: Bug report
+description: Report a reproducible defect in routing, proxying, configuration, or operations
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a problem. Do not include secrets, personal data, production request bodies, or vulnerability details. Security issues must follow SECURITY.md.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: Provide the HybridRoute version, tag, or commit SHA.
+      placeholder: v0.2.0 or 0ebeb36
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - Routing decision
+        - Policy or schema eligibility
+        - Semantic proxy
+        - Embedding backend
+        - Health or circuit breaker
+        - Hot reload
+        - Feedback or adaptation
+        - Metrics or tracing
+        - Docker Compose
+        - Benchmark
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Problem description
+      description: Explain what happened and why it appears incorrect.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      description: Provide the smallest safe configuration and request that reproduces the issue.
+      placeholder: |
+        1. Start HybridRoute with ...
+        2. Send ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include sanitized logs or response data when useful.
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: |
+        OS:
+        Rust version:
+        Docker version:
+        Embedding mode:
+        Deployment mode:
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I removed secrets, personal data, and sensitive request content.
+          required: true
+        - label: I searched existing issues for the same problem.
+          required: true
+        - label: This is not a privately reportable security vulnerability.
+          required: true
