@@ -25,6 +25,11 @@ jobs:
         run: |
           set -euo pipefail
 
+          for file in .bootstrap/part*; do
+            printf '%s %s ' "$(basename "$file")" "$(wc -c < "$file")"
+            git hash-object "$file"
+          done
+
           cat .bootstrap/part* | base64 --decode > /tmp/hrv2-clean.tar.gz
           echo "2864a40ff8e16dfcccc04e5a0ef059256dcb9edf95c6fe845d369fae53f46316  /tmp/hrv2-clean.tar.gz" | sha256sum --check --strict
           gzip --test /tmp/hrv2-clean.tar.gz
