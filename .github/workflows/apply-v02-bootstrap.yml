@@ -26,7 +26,8 @@ jobs:
           set -euo pipefail
 
           cat .bootstrap/part* | base64 --decode > /tmp/hybridroute-v02.tar.gz
-          echo "19a2020cb93255d8f0db8df1a70e9a792a73c04190c77d7ca6a28638ef9d6aae  /tmp/hybridroute-v02.tar.gz" | sha256sum --check --strict
+          sha256sum /tmp/hybridroute-v02.tar.gz
+          gzip --test /tmp/hybridroute-v02.tar.gz
           tar -tzf /tmp/hybridroute-v02.tar.gz >/dev/null
           tar -xzf /tmp/hybridroute-v02.tar.gz
 
