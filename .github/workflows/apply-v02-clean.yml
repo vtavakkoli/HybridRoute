@@ -25,9 +25,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          for file in .bootstrap/part002a0 .bootstrap/part002a1 .bootstrap/part002a2 .bootstrap/part002b; do
+          for file in .bootstrap/part002a0 .bootstrap/part002a1 .bootstrap/part002a2; do
             test "$(wc -c < "$file")" -eq 1000 || { echo "unexpected size: $file"; exit 1; }
           done
+          test "$(wc -c < .bootstrap/part002b)" -eq 3000 || { echo "unexpected size: part002b"; exit 1; }
 
           cat \
             .bootstrap/part000 \
