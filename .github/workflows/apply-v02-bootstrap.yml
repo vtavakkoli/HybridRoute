@@ -1,24 +1,27 @@
 name: apply-v02-bootstrap
 
 on:
-  push:
+  pull_request:
     branches:
-      - agent/v0.2-advanced-routing-benchmark
+      - main
 
 permissions:
   contents: write
 
 jobs:
   apply:
-    if: ${{ !contains(github.event.head_commit.message, '[v0.2 applied]') }}
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository && !contains(github.event.pull_request.title, '[v0.2 applied]') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
 
       - name: Verify and apply v0.2 source tree
         shell: bash
+        env:
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
         run: |
           set -euo pipefail
 
@@ -28,10 +31,9 @@ jobs:
           tar -xzf /tmp/hybridroute-v02.tar.gz
 
           rm -rf .bootstrap
-          rm -f .github/workflows/apply-v02-bootstrap.yml
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           git commit -m "Add advanced routing and 1000-scenario benchmark [v0.2 applied]"
-          git push origin HEAD
+          git push origin "HEAD:${HEAD_BRANCH}"
