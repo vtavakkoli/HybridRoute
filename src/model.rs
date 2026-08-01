@@ -6,14 +6,22 @@ use serde_json::Value;
 #[derive(Debug, Clone, Deserialize)]
 pub struct RouteRequest {
     pub text: String,
-    #[serde(default)] pub method: Option<String>,
-    #[serde(default)] pub content_type: Option<String>,
-    #[serde(default)] pub domain: Option<String>,
-    #[serde(default)] pub roles: Vec<String>,
-    #[serde(default)] pub headers: HashMap<String, String>,
-    #[serde(default)] pub body: Option<Value>,
-    #[serde(default)] pub sticky_key: Option<String>,
-    #[serde(default)] pub top_k: Option<usize>,
+    #[serde(default)]
+    pub method: Option<String>,
+    #[serde(default)]
+    pub content_type: Option<String>,
+    #[serde(default)]
+    pub domain: Option<String>,
+    #[serde(default)]
+    pub roles: Vec<String>,
+    #[serde(default)]
+    pub headers: HashMap<String, String>,
+    #[serde(default)]
+    pub body: Option<Value>,
+    #[serde(default)]
+    pub sticky_key: Option<String>,
+    #[serde(default)]
+    pub top_k: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -49,11 +57,33 @@ pub struct CandidateScore {
 
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum DecisionMode { Confident, TopScore, Softmax, Clarification, Fallback, NoMatch }
-impl DecisionMode { pub const fn as_str(self) -> &'static str { match self { Self::Confident => "confident", Self::TopScore => "top_score", Self::Softmax => "softmax", Self::Clarification => "clarification", Self::Fallback => "fallback", Self::NoMatch => "no_match" } } }
+pub enum DecisionMode {
+    Confident,
+    TopScore,
+    Softmax,
+    Clarification,
+    Fallback,
+    NoMatch,
+}
+impl DecisionMode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Confident => "confident",
+            Self::TopScore => "top_score",
+            Self::Softmax => "softmax",
+            Self::Clarification => "clarification",
+            Self::Fallback => "fallback",
+            Self::NoMatch => "no_match",
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize)]
-pub struct ClarificationOption { pub route_id: String, pub label: String, pub score: f32 }
+pub struct ClarificationOption {
+    pub route_id: String,
+    pub label: String,
+    pub score: f32,
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ClarificationResponse {
@@ -80,8 +110,10 @@ pub struct RouteDecision {
 pub struct FeedbackRequest {
     pub route_id: String,
     pub reward: f32,
-    #[serde(default)] pub success: bool,
-    #[serde(default)] pub latency_ms: Option<u64>,
+    #[serde(default)]
+    pub success: bool,
+    #[serde(default)]
+    pub latency_ms: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -102,4 +134,6 @@ pub struct HealthResponse {
 }
 
 #[derive(Debug, Serialize)]
-pub struct ErrorBody { pub error: String }
+pub struct ErrorBody {
+    pub error: String,
+}

@@ -10,7 +10,7 @@ services:
     ports:
       - "8080:8080"
     healthcheck:
-      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/healthz"]
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/healthz"]
       interval: 3s
       timeout: 2s
       retries: 20
@@ -30,7 +30,15 @@ services:
   streetlight-api: &mock
     build: ./examples/mock-api
     environment: { SERVICE_NAME: streetlight-report }
-    healthcheck: { test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8080/healthz"], interval: 3s, timeout: 2s, retries: 10 }
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=1).read()"
+      interval: 3s
+      timeout: 2s
+      retries: 10
   parking-api: { <<: *mock, environment: { SERVICE_NAME: parking-permit } }
   invoice-api: { <<: *mock, environment: { SERVICE_NAME: invoice-processing } }
   waste-api: { <<: *mock, environment: { SERVICE_NAME: waste-collection } }
