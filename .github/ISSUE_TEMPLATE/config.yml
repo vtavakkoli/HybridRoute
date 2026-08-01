@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/vtavakkoli/HybridRoute/security/policy
+    about: Report suspected vulnerabilities privately; do not open a public issue.
+  - name: Configuration reference
+    url: https://github.com/vtavakkoli/HybridRoute/blob/main/docs/CONFIGURATION.md
+    about: Review supported configuration fields and safety invariants before filing an issue.
