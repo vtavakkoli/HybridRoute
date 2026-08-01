@@ -31,17 +31,12 @@ jobs:
 
           path = Path('src/operations.rs')
           text = path.read_text()
-          old = '''        let Some(entry) = self.routes.get(route_id).map(|v| Arc::clone(v.value())) else { return configured; };
-          entry.lock().await.quality
-          '''
-          new = '''        let Some(entry) = self.routes.get(route_id).map(|v| Arc::clone(v.value())) else { return configured; };
-          let quality = entry.lock().await.quality;
-          quality
-          '''
+          old = '        entry.lock().await.quality\n'
+          new = '        let quality = entry.lock().await.quality;\n        quality\n'
           if old in text:
               path.write_text(text.replace(old, new, 1))
           elif 'let quality = entry.lock().await.quality;' not in text:
-              raise SystemExit('Expected operations.rs pattern not found')
+              raise SystemExit('Expected operations.rs quality expression not found')
 
       - name: Format Rust source
         run: cargo fmt --all
