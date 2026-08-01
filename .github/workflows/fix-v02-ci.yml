@@ -61,8 +61,8 @@ jobs:
       - name: Build release binary
         run: cargo build --release
 
-      - name: Build and start Compose stack
-        run: docker compose up --build --detach
+      - name: Build and start Compose smoke stack
+        run: docker compose up --build --detach hybridroute
 
       - name: Run Compose smoke test
         run: bash ./scripts/smoke-test.sh
