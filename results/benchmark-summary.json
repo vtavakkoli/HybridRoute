@@ -1,0 +1,9 @@
+{
+  "report_type": "preflight",
+  "scenarios": 1000,
+  "intents": 10,
+  "phrases_per_intent": 10,
+  "contexts_per_phrase": 10,
+  "runtime_measurements": false,
+  "note": "Run the Docker Compose test service to generate measured results."
+}

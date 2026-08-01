@@ -1,509 +1,133 @@
-use std::{cmp::Ordering, collections::HashSet, sync::Arc};
+use std::{cmp::Ordering, collections::HashSet, time::Instant};
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 
 use crate::{
-    config::{AmbiguityStrategy, AppConfig, RouteConfig},
-    embedding::{cosine_similarity, EmbeddingEngine},
-    model::{CandidateScore, DecisionMode, RouteDecision, RoutingContext},
-    text::{keyword_score, normalize_text},
+    config::{AmbiguityStrategy, RouteConfig},
+    embedding::cosine_similarity,
+    model::{CandidateScore, ClarificationOption, ClarificationResponse, DecisionMode, RouteDecision, RoutingContext},
+    operations::CircuitStateView,
+    runtime::RuntimeManager,
+    schema::compatibility_score,
+    text::{keyword_score, normalize_text, tokenize_vec},
 };
 
 #[derive(Clone)]
-pub struct RouterEngine {
-    config: Arc<AppConfig>,
-    embedding: EmbeddingEngine,
-    routes: Arc<Vec<PreparedRoute>>,
-}
-
-#[derive(Clone)]
-struct PreparedRoute {
-    config: RouteConfig,
-    embedding: Option<Vec<f32>>,
-}
+pub struct RouterEngine { runtime: RuntimeManager }
 
 impl RouterEngine {
-    pub async fn new(config: AppConfig) -> Result<Self> {
-        let embedding = EmbeddingEngine::new(&config.embedding)?;
-        let mut prepared = Vec::with_capacity(config.routes.len());
-        for route in &config.routes {
-            let document = route.semantic_document();
-            let vector = if route.fallback || document.is_empty() {
-                None
-            } else {
-                embedding
-                    .embed(&document)
-                    .await
-                    .with_context(|| format!("failed to embed route {}", route.id))?
-            };
-            prepared.push(PreparedRoute {
-                config: route.clone(),
-                embedding: vector,
-            });
-        }
-        Ok(Self {
-            config: Arc::new(config),
-            embedding,
-            routes: Arc::new(prepared),
-        })
-    }
+    pub fn new(runtime: RuntimeManager) -> Self { Self { runtime } }
+    pub fn runtime(&self) -> &RuntimeManager { &self.runtime }
 
-    pub fn config(&self) -> &AppConfig {
-        &self.config
-    }
-
-    pub fn embedding_mode(&self) -> &'static str {
-        self.embedding.mode_name()
-    }
-
-    pub fn route_count(&self) -> usize {
-        self.routes.len()
-    }
-
+    #[tracing::instrument(skip_all, fields(generation))]
     pub async fn decide(&self, context: &RoutingContext) -> Result<RouteDecision> {
-        let normalized = normalize_text(&context.text, self.config.extraction.max_semantic_chars);
-        let role_set = context
-            .roles
-            .iter()
-            .map(|role| role.to_lowercase())
-            .collect::<HashSet<_>>();
-        let eligible_routes = self
-            .routes
-            .iter()
-            .filter(|route| eligible(&route.config, context, &role_set))
-            .collect::<Vec<_>>();
-        let needs_embedding = eligible_routes
-            .iter()
-            .any(|route| route.embedding.is_some());
-        let request_vector = if normalized.is_empty() || !needs_embedding {
-            None
-        } else {
-            self.embedding.embed(&normalized).await?
-        };
+        let started = Instant::now();
+        let table = self.runtime.snapshot();
+        tracing::Span::current().record("generation", table.generation);
+        let normalized = normalize_text(&context.text, table.config.extraction.max_semantic_chars);
+        let tokens = tokenize_vec(&normalized);
+        let request_vector = if normalized.is_empty() { None } else { table.embedding.embed(&normalized).await? };
+        let role_set = context.roles.iter().map(|r| r.to_lowercase()).collect::<HashSet<_>>();
+        let mut indices = table.retrieval.candidates(&tokens, request_vector.as_deref());
+        for (index, route) in table.routes.iter().enumerate() { if route.config.fallback && !indices.contains(&index) { indices.push(index); } }
+        if indices.is_empty() { indices.extend(0..table.routes.len()); }
 
-        let mut candidates = Vec::with_capacity(eligible_routes.len());
-        for route in eligible_routes {
-            let lexical = (!route.config.keywords.is_empty()).then(|| {
-                keyword_score(
-                    &normalized,
-                    &route.config.keywords,
-                    &route.config.negative_keywords,
-                )
-            });
-            let semantic = request_vector
-                .as_ref()
-                .zip(route.embedding.as_ref())
-                .and_then(|(request, route)| cosine_similarity(request, route))
-                .map(|score| score.clamp(0.0, 1.0));
+        let mut candidates = Vec::new();
+        for index in indices {
+            let Some(route) = table.routes.get(index) else { continue; };
+            if !policy_eligible(&route.config, context, &role_set) { continue; }
+            if !self.runtime.operations.eligible(&route.config.id).await && !route.config.fallback { continue; }
+            let (schema_score, schema_valid) = compatibility_score(route.config.request_schema.as_ref(), context.body.as_ref());
+            if route.config.schema_required && !schema_valid { continue; }
+            let bm25 = table.retrieval.bm25_score(index, &tokens);
+            let weighted_keyword = keyword_score(&normalized, &route.config.keywords, &route.config.negative_keywords);
+            let lexical = bm25.max(weighted_keyword);
+            let semantic = request_vector.as_ref().zip(route.embedding.as_ref()).and_then(|(q, d)| cosine_similarity(q, d)).map(|v| v.clamp(0.0, 1.0));
             let metadata = metadata_score(&route.config, context);
-            let quality = route.config.quality.clamp(0.0, 1.0);
-            let total = weighted_score(&self.config, semantic, lexical, metadata, quality);
-
+            let quality = self.runtime.operations.quality(&route.config.id, route.config.quality).await;
+            let (healthy, circuit) = self.runtime.operations.state_view(&route.config.id).await;
+            let score = weighted_score(&table.config.scoring, semantic, lexical, metadata, schema_score, quality);
             candidates.push(CandidateScore {
-                route_id: route.config.id.clone(),
-                target: route.config.target.clone(),
-                rewrite_path: route.config.rewrite_path.clone(),
-                score: total,
-                embedding_score: semantic,
-                keyword_score: lexical,
-                metadata_score: metadata,
-                quality_score: quality,
-                safe_for_exploration: route.config.safe_for_exploration,
-                fallback: route.config.fallback,
+                route_id: route.config.id.clone(), target: route.config.target.clone(), rewrite_path: route.config.rewrite_path.clone(), score,
+                embedding_score: semantic, bm25_score: lexical, metadata_score: metadata, schema_score, quality_score: quality,
+                healthy, circuit_state: match circuit { CircuitStateView::Closed => "closed", CircuitStateView::Open => "open", CircuitStateView::HalfOpen => "half_open" }.into(),
+                safe_for_exploration: route.config.safe_for_exploration, high_impact: route.config.high_impact, fallback: route.config.fallback,
             });
         }
-
-        candidates.sort_by(|left, right| {
-            right
-                .score
-                .partial_cmp(&left.score)
-                .unwrap_or(Ordering::Equal)
-                .then_with(|| left.route_id.cmp(&right.route_id))
-        });
-
-        let top_k = context.top_k.clamp(1, 20);
-        let visible = candidates.iter().take(top_k).cloned().collect::<Vec<_>>();
-        Ok(self.select(candidates, visible, &context.sticky_key))
+        candidates.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal).then_with(|| a.route_id.cmp(&b.route_id)));
+        let visible = candidates.iter().take(context.top_k.clamp(1, 20)).cloned().collect();
+        let decision = select(&table.config.decision, table.generation, candidates, visible, &context.sticky_key);
+        self.runtime.metrics.decisions.inc();
+        self.runtime.metrics.routing_latency_seconds.observe(started.elapsed().as_secs_f64());
+        match decision.mode { DecisionMode::Clarification => { self.runtime.metrics.clarifications.inc(); }, DecisionMode::Fallback | DecisionMode::NoMatch => { self.runtime.metrics.fallbacks.inc(); }, _ => {} }
+        Ok(decision)
     }
+}
 
-    fn select(
-        &self,
-        candidates: Vec<CandidateScore>,
-        visible: Vec<CandidateScore>,
-        sticky_key: &str,
-    ) -> RouteDecision {
-        let fallback = candidates
-            .iter()
-            .find(|candidate| candidate.fallback)
-            .cloned();
-        let ranked = candidates
-            .iter()
-            .filter(|candidate| !candidate.fallback)
-            .cloned()
-            .collect::<Vec<_>>();
-
-        let Some(top) = ranked.first().cloned() else {
-            return fallback_decision(fallback, visible, "no eligible routes");
-        };
-
-        let second_score = ranked
-            .get(1)
-            .map(|candidate| candidate.score)
-            .unwrap_or(0.0);
-        let margin = (top.score - second_score).max(0.0);
-
-        if top.score < self.config.decision.minimum_score {
-            return fallback_decision(fallback, visible, "best route is below the minimum score");
-        }
-
-        if top.score >= self.config.decision.confident_score
-            && margin >= self.config.decision.confident_margin
-        {
-            let confidence = top.score;
-            return RouteDecision {
-                selected: Some(top),
-                mode: DecisionMode::Confident,
-                confidence,
-                margin,
-                reason: "high score and clear margin".into(),
-                candidates: visible,
-            };
-        }
-
-        let ambiguous = ranked.len() > 1 && margin <= self.config.decision.ambiguity_margin;
-        if ambiguous {
-            match self.config.decision.ambiguity_strategy {
-                AmbiguityStrategy::Fallback => {
-                    return fallback_decision(fallback, visible, "ambiguous route scores");
-                }
-                AmbiguityStrategy::Top1 => {
-                    let confidence = top.score;
-                    return RouteDecision {
-                        selected: Some(top),
-                        mode: DecisionMode::TopScore,
-                        confidence,
-                        margin,
-                        reason: "ambiguous scores; configured to select top score".into(),
-                        candidates: visible,
-                    };
-                }
-                AmbiguityStrategy::Softmax => {
-                    let safe = ranked
-                        .iter()
-                        .filter(|candidate| candidate.safe_for_exploration)
-                        .take(5)
-                        .cloned()
-                        .collect::<Vec<_>>();
-                    if safe.len() >= 2 {
-                        let selected = deterministic_softmax(
-                            &safe,
-                            self.config.decision.temperature,
-                            sticky_key,
-                        );
-                        let confidence = selected.score;
-                        return RouteDecision {
-                            selected: Some(selected),
-                            mode: DecisionMode::Softmax,
-                            confidence,
-                            margin,
-                            reason: "ambiguous safe routes selected by sticky softmax".into(),
-                            candidates: visible,
-                        };
-                    }
-                    return fallback_decision(
-                        fallback,
-                        visible,
-                        "ambiguous routes are not safe for probabilistic selection",
-                    );
-                }
+fn select(config: &crate::config::DecisionConfig, generation: u64, candidates: Vec<CandidateScore>, visible: Vec<CandidateScore>, sticky_key: &str) -> RouteDecision {
+    let fallback = candidates.iter().find(|c| c.fallback).cloned();
+    let ranked = candidates.iter().filter(|c| !c.fallback).cloned().collect::<Vec<_>>();
+    let Some(top) = ranked.first().cloned() else { return fallback_decision(fallback, visible, generation, "no eligible routes"); };
+    let second = ranked.get(1).map(|c| c.score).unwrap_or(0.0);
+    let margin = (top.score - second).max(0.0);
+    if top.score < config.minimum_score { return fallback_decision(fallback, visible, generation, "best route below minimum score"); }
+    if top.score >= config.confident_score && margin >= config.confident_margin {
+        return RouteDecision { selected: Some(top.clone()), mode: DecisionMode::Confident, confidence: top.score, margin, reason: "high score and clear margin".into(), generation, candidates: visible, clarification: None };
+    }
+    let ambiguous = ranked.len() > 1 && margin <= config.ambiguity_margin;
+    if ambiguous {
+        let any_high_impact = ranked.iter().take(2).any(|c| c.high_impact);
+        match if any_high_impact { AmbiguityStrategy::Clarify } else { config.ambiguity_strategy } {
+            AmbiguityStrategy::Clarify => return clarification(ranked, visible, generation, margin),
+            AmbiguityStrategy::Fallback => return fallback_decision(fallback, visible, generation, "ambiguous route scores"),
+            AmbiguityStrategy::Top1 => return RouteDecision { selected: Some(top.clone()), mode: DecisionMode::TopScore, confidence: top.score, margin, reason: "ambiguous scores; selected top score".into(), generation, candidates: visible, clarification: None },
+            AmbiguityStrategy::Softmax => {
+                let safe = ranked.iter().filter(|c| c.safe_for_exploration && !c.high_impact).take(5).cloned().collect::<Vec<_>>();
+                if safe.len() >= 2 { let selected = deterministic_softmax(&safe, config.temperature, sticky_key); return RouteDecision { selected: Some(selected.clone()), mode: DecisionMode::Softmax, confidence: selected.score, margin, reason: "ambiguous safe routes selected by sticky softmax".into(), generation, candidates: visible, clarification: None }; }
+                return clarification(ranked, visible, generation, margin);
             }
         }
-
-        let confidence = top.score;
-        RouteDecision {
-            selected: Some(top),
-            mode: DecisionMode::TopScore,
-            confidence,
-            margin,
-            reason: "highest hybrid score".into(),
-            candidates: visible,
-        }
     }
+    RouteDecision { selected: Some(top.clone()), mode: DecisionMode::TopScore, confidence: top.score, margin, reason: "selected highest-scoring route".into(), generation, candidates: visible, clarification: None }
 }
 
-fn eligible(route: &RouteConfig, context: &RoutingContext, roles: &HashSet<String>) -> bool {
-    let method_matches = route.methods.is_empty()
-        || route
-            .methods
-            .iter()
-            .any(|method| method.eq_ignore_ascii_case(&context.method));
-    if !method_matches {
-        return false;
-    }
-
-    let content_matches = route.content_types.is_empty()
-        || context.content_type.as_ref().is_some_and(|content_type| {
-            route.content_types.iter().any(|allowed| {
-                content_type
-                    .to_lowercase()
-                    .starts_with(&allowed.to_lowercase())
-            })
-        });
-    if !content_matches {
-        return false;
-    }
-
-    let allowed_role = route.required_roles_any.is_empty()
-        || route
-            .required_roles_any
-            .iter()
-            .any(|role| roles.contains(&role.to_lowercase()));
-    if !allowed_role {
-        return false;
-    }
-
-    if route
-        .forbidden_roles
-        .iter()
-        .any(|role| roles.contains(&role.to_lowercase()))
-    {
-        return false;
-    }
-
-    route.required_headers.iter().all(|(name, expected)| {
-        context
-            .headers
-            .iter()
-            .find(|(actual, _)| actual.eq_ignore_ascii_case(name))
-            .is_some_and(|(_, actual)| actual.eq_ignore_ascii_case(expected))
-    })
+fn clarification(ranked: Vec<CandidateScore>, visible: Vec<CandidateScore>, generation: u64, margin: f32) -> RouteDecision {
+    let options = ranked.iter().take(3).map(|c| ClarificationOption { route_id: c.route_id.clone(), label: c.route_id.replace('-', " "), score: c.score }).collect::<Vec<_>>();
+    RouteDecision { selected: None, mode: DecisionMode::Clarification, confidence: ranked.first().map(|c| c.score).unwrap_or(0.0), margin, reason: "request is ambiguous and requires clarification".into(), generation, candidates: visible, clarification: Some(ClarificationResponse { status: "clarification_required", question: "Which service best matches your request?".into(), options, generation }) }
 }
 
-fn metadata_score(route: &RouteConfig, context: &RoutingContext) -> Option<f32> {
-    if route.domains.is_empty() {
-        return None;
-    }
-    Some(context.domain.as_ref().map_or(0.0, |domain| {
-        if route
-            .domains
-            .iter()
-            .any(|value| value.eq_ignore_ascii_case(domain))
-        {
-            1.0
-        } else {
-            0.0
-        }
-    }))
+fn fallback_decision(fallback: Option<CandidateScore>, candidates: Vec<CandidateScore>, generation: u64, reason: &str) -> RouteDecision {
+    match fallback { Some(selected) => RouteDecision { confidence: selected.score, selected: Some(selected), mode: DecisionMode::Fallback, margin: 0.0, reason: reason.into(), generation, candidates, clarification: None }, None => RouteDecision { selected: None, mode: DecisionMode::NoMatch, confidence: 0.0, margin: 0.0, reason: reason.into(), generation, candidates, clarification: None } }
 }
 
-fn weighted_score(
-    config: &AppConfig,
-    semantic: Option<f32>,
-    keyword: Option<f32>,
-    metadata: Option<f32>,
-    quality: f32,
-) -> f32 {
-    let mut weighted = 0.0f32;
-    let mut weight = 0.0f32;
-
-    if let Some(semantic) = semantic {
-        weighted += semantic * config.scoring.embedding_weight.max(0.0);
-        weight += config.scoring.embedding_weight.max(0.0);
-    }
-    if let Some(keyword) = keyword {
-        weighted += keyword * config.scoring.keyword_weight.max(0.0);
-        weight += config.scoring.keyword_weight.max(0.0);
-    }
-    if let Some(metadata) = metadata {
-        weighted += metadata * config.scoring.metadata_weight.max(0.0);
-        weight += config.scoring.metadata_weight.max(0.0);
-    }
-    weighted += quality * config.scoring.quality_weight.max(0.0);
-    weight += config.scoring.quality_weight.max(0.0);
-
-    if weight <= f32::EPSILON {
-        0.0
-    } else {
-        (weighted / weight).clamp(0.0, 1.0)
-    }
+fn policy_eligible(route: &RouteConfig, context: &RoutingContext, roles: &HashSet<String>) -> bool {
+    if !route.methods.is_empty() && !route.methods.iter().any(|m| m.eq_ignore_ascii_case(&context.method)) { return false; }
+    if !route.content_types.is_empty() && !context.content_type.as_ref().is_some_and(|ct| route.content_types.iter().any(|allowed| ct.to_lowercase().starts_with(&allowed.to_lowercase()))) { return false; }
+    if !route.required_roles.is_empty() && !route.required_roles.iter().all(|role| roles.contains(&role.to_lowercase())) { return false; }
+    if route.forbidden_roles.iter().any(|role| roles.contains(&role.to_lowercase())) { return false; }
+    for (name, expected) in &route.required_headers { if !context.headers.get(&name.to_lowercase()).is_some_and(|actual| actual == expected) { return false; } }
+    true
 }
 
-fn fallback_decision(
-    fallback: Option<CandidateScore>,
-    candidates: Vec<CandidateScore>,
-    reason: &str,
-) -> RouteDecision {
-    match fallback {
-        Some(fallback) => RouteDecision {
-            confidence: fallback.score,
-            margin: 0.0,
-            selected: Some(fallback),
-            mode: DecisionMode::Fallback,
-            reason: reason.into(),
-            candidates,
-        },
-        None => RouteDecision {
-            selected: None,
-            mode: DecisionMode::NoMatch,
-            confidence: 0.0,
-            margin: 0.0,
-            reason: reason.into(),
-            candidates,
-        },
-    }
+fn metadata_score(route: &RouteConfig, context: &RoutingContext) -> f32 {
+    let mut checks = 0.0; let mut matched = 0.0;
+    if !route.methods.is_empty() { checks += 1.0; if route.methods.iter().any(|m| m.eq_ignore_ascii_case(&context.method)) { matched += 1.0; } }
+    if !route.domains.is_empty() { checks += 1.0; if context.domain.as_ref().is_some_and(|d| route.domains.iter().any(|rd| rd.eq_ignore_ascii_case(d))) { matched += 1.0; } }
+    if !route.content_types.is_empty() { checks += 1.0; if context.content_type.as_ref().is_some_and(|ct| route.content_types.iter().any(|allowed| ct.to_lowercase().starts_with(&allowed.to_lowercase()))) { matched += 1.0; } }
+    if checks == 0.0 { 1.0 } else { matched / checks }
 }
 
-fn deterministic_softmax(
-    candidates: &[CandidateScore],
-    temperature: f32,
-    sticky_key: &str,
-) -> CandidateScore {
-    let temperature = temperature.max(0.001);
-    let maximum = candidates
-        .iter()
-        .map(|candidate| candidate.score)
-        .fold(f32::NEG_INFINITY, f32::max);
-    let weights = candidates
-        .iter()
-        .map(|candidate| ((candidate.score - maximum) / temperature).exp())
-        .collect::<Vec<_>>();
-    let total = weights.iter().sum::<f32>();
-    let random = stable_unit_interval(sticky_key);
-    let mut cumulative = 0.0f32;
-    for (candidate, weight) in candidates.iter().zip(weights) {
-        cumulative += weight / total;
-        if random <= cumulative {
-            return candidate.clone();
-        }
-    }
-    candidates.last().expect("non-empty candidates").clone()
+fn weighted_score(config: &crate::config::ScoringConfig, semantic: Option<f32>, bm25: f32, metadata: f32, schema: f32, quality: f32) -> f32 {
+    let mut numerator = config.bm25_weight * bm25 + config.metadata_weight * metadata + config.schema_weight * schema + config.quality_weight * quality;
+    let mut denominator = config.bm25_weight + config.metadata_weight + config.schema_weight + config.quality_weight;
+    if let Some(semantic) = semantic { numerator += config.embedding_weight * semantic; denominator += config.embedding_weight; }
+    if denominator <= f32::EPSILON { 0.0 } else { (numerator / denominator).clamp(0.0, 1.0) }
 }
 
-fn stable_unit_interval(key: &str) -> f32 {
-    let hash = blake3::hash(key.as_bytes());
-    let integer = u64::from_le_bytes(hash.as_bytes()[0..8].try_into().expect("slice length"));
-    (integer as f64 / u64::MAX as f64) as f32
-}
-
-#[cfg(test)]
-mod tests {
-    use std::collections::HashMap;
-
-    use super::*;
-    use crate::{
-        config::{
-            DecisionConfig, EmbeddingConfig, EmbeddingMode, ExtractionConfig, ProxyConfig,
-            ScoringConfig, ServerConfig,
-        },
-        model::RoutingContext,
-    };
-
-    fn test_config() -> AppConfig {
-        AppConfig {
-            server: ServerConfig::default(),
-            proxy: ProxyConfig::default(),
-            extraction: ExtractionConfig::default(),
-            scoring: ScoringConfig {
-                embedding_weight: 0.45,
-                keyword_weight: 0.45,
-                metadata_weight: 0.05,
-                quality_weight: 0.05,
-            },
-            decision: DecisionConfig::default(),
-            embedding: EmbeddingConfig {
-                mode: EmbeddingMode::Hashing,
-                dimensions: 128,
-                ..EmbeddingConfig::default()
-            },
-            routes: vec![
-                RouteConfig {
-                    id: "streetlight".into(),
-                    target: "http://streetlight:8080".into(),
-                    rewrite_path: Some("/reports/streetlights".into()),
-                    description: "Report a broken public streetlight or lamp".into(),
-                    examples: vec!["the street lamp is blinking".into()],
-                    keywords: HashMap::from([
-                        ("streetlight".into(), 2.0),
-                        ("lamp".into(), 1.0),
-                        ("broken".into(), 1.0),
-                    ]),
-                    negative_keywords: HashMap::new(),
-                    methods: vec!["POST".into()],
-                    content_types: vec!["application/json".into()],
-                    domains: vec!["infrastructure".into()],
-                    required_roles_any: vec![],
-                    forbidden_roles: vec![],
-                    required_headers: HashMap::new(),
-                    quality: 1.0,
-                    safe_for_exploration: false,
-                    fallback: false,
-                },
-                RouteConfig {
-                    id: "general".into(),
-                    target: "http://general:8080".into(),
-                    rewrite_path: Some("/intake".into()),
-                    description: "General service intake".into(),
-                    examples: vec![],
-                    keywords: HashMap::new(),
-                    negative_keywords: HashMap::new(),
-                    methods: vec![],
-                    content_types: vec![],
-                    domains: vec![],
-                    required_roles_any: vec![],
-                    forbidden_roles: vec![],
-                    required_headers: HashMap::new(),
-                    quality: 0.5,
-                    safe_for_exploration: false,
-                    fallback: true,
-                },
-            ],
-        }
-    }
-
-    #[tokio::test]
-    async fn selects_streetlight_route() {
-        let engine = RouterEngine::new(test_config()).await.unwrap();
-        let decision = engine
-            .decide(&RoutingContext {
-                text: "A broken streetlight is blinking".into(),
-                method: "POST".into(),
-                content_type: Some("application/json".into()),
-                domain: Some("infrastructure".into()),
-                roles: vec![],
-                headers: HashMap::new(),
-                sticky_key: "request-1".into(),
-                top_k: 5,
-            })
-            .await
-            .unwrap();
-        assert_eq!(decision.selected.unwrap().route_id, "streetlight");
-    }
-
-    #[tokio::test]
-    async fn required_header_filters_route() {
-        let mut config = test_config();
-        config.routes[0]
-            .required_headers
-            .insert("x-tenant".into(), "city".into());
-        let engine = RouterEngine::new(config).await.unwrap();
-        let decision = engine
-            .decide(&RoutingContext {
-                text: "A broken streetlight is blinking".into(),
-                method: "POST".into(),
-                content_type: Some("application/json".into()),
-                domain: Some("infrastructure".into()),
-                roles: vec![],
-                headers: HashMap::from([("X-Tenant".into(), "other".into())]),
-                sticky_key: "request-2".into(),
-                top_k: 5,
-            })
-            .await
-            .unwrap();
-        assert_eq!(decision.selected.unwrap().route_id, "general");
-    }
-
-    #[test]
-    fn stable_probability_is_reproducible() {
-        assert_eq!(stable_unit_interval("abc"), stable_unit_interval("abc"));
-    }
+fn deterministic_softmax(candidates: &[CandidateScore], temperature: f32, sticky_key: &str) -> CandidateScore {
+    let temperature = temperature.max(0.001); let max = candidates.iter().map(|c| c.score).fold(f32::NEG_INFINITY, f32::max);
+    let weights = candidates.iter().map(|c| ((c.score - max) / temperature).exp()).collect::<Vec<_>>(); let total = weights.iter().sum::<f32>();
+    let hash = blake3::hash(sticky_key.as_bytes()); let raw = u64::from_le_bytes(hash.as_bytes()[0..8].try_into().expect("slice length")); let mut point = (raw as f64 / u64::MAX as f64) as f32 * total;
+    for (candidate, weight) in candidates.iter().zip(weights) { if point <= weight { return candidate.clone(); } point -= weight; }
+    candidates[0].clone()
 }

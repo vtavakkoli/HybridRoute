@@ -1,49 +1,54 @@
 services:
-  nginx:
-    image: nginx:1.29-alpine
-    ports:
-      - "8088:80"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-    depends_on:
-      hybridroute:
-        condition: service_healthy
-
   hybridroute:
     build: .
     environment:
       HYBRIDROUTE_CONFIG: /app/config/hybridroute.toml
-      RUST_LOG: hybridroute=info,tower_http=info
+      HYBRIDROUTE_FEEDBACK_TOKEN: benchmark-secret
+      RUST_LOG: hybridroute=info,tower_http=warn
     volumes:
       - ./config/hybridroute.toml:/app/config/hybridroute.toml:ro
+    ports:
+      - "8080:8080"
     healthcheck:
       test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/healthz"]
-      interval: 30s
-      timeout: 3s
-      retries: 3
-      start_period: 5s
+      interval: 3s
+      timeout: 2s
+      retries: 20
     depends_on:
-      - streetlight-api
-      - parking-api
-      - invoice-api
-      - general-api
+      streetlight-api: { condition: service_healthy }
+      parking-api: { condition: service_healthy }
+      invoice-api: { condition: service_healthy }
+      waste-api: { condition: service_healthy }
+      water-api: { condition: service_healthy }
+      housing-api: { condition: service_healthy }
+      library-api: { condition: service_healthy }
+      transport-api: { condition: service_healthy }
+      event-api: { condition: service_healthy }
+      summary-api: { condition: service_healthy }
+      general-api: { condition: service_healthy }
 
-  streetlight-api:
+  streetlight-api: &mock
     build: ./examples/mock-api
-    environment:
-      SERVICE_NAME: streetlight-api
+    environment: { SERVICE_NAME: streetlight-report }
+    healthcheck: { test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8080/healthz"], interval: 3s, timeout: 2s, retries: 10 }
+  parking-api: { <<: *mock, environment: { SERVICE_NAME: parking-permit } }
+  invoice-api: { <<: *mock, environment: { SERVICE_NAME: invoice-processing } }
+  waste-api: { <<: *mock, environment: { SERVICE_NAME: waste-collection } }
+  water-api: { <<: *mock, environment: { SERVICE_NAME: water-leak } }
+  housing-api: { <<: *mock, environment: { SERVICE_NAME: housing-support } }
+  library-api: { <<: *mock, environment: { SERVICE_NAME: library-service } }
+  transport-api: { <<: *mock, environment: { SERVICE_NAME: public-transport } }
+  event-api: { <<: *mock, environment: { SERVICE_NAME: event-permit } }
+  summary-api: { <<: *mock, environment: { SERVICE_NAME: document-summarization } }
+  general-api: { <<: *mock, environment: { SERVICE_NAME: general-intake } }
 
-  parking-api:
-    build: ./examples/mock-api
+  test:
+    build: ./benchmarks
     environment:
-      SERVICE_NAME: parking-api
-
-  invoice-api:
-    build: ./examples/mock-api
-    environment:
-      SERVICE_NAME: invoice-api
-
-  general-api:
-    build: ./examples/mock-api
-    environment:
-      SERVICE_NAME: general-api
+      HYBRIDROUTE_URL: http://hybridroute:8080
+      ADMIN_TOKEN: benchmark-secret
+    volumes:
+      - ./results:/work/results
+    depends_on:
+      hybridroute: { condition: service_healthy }
+    command: ["python", "/work/run_benchmark.py"]
