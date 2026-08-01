@@ -18,7 +18,7 @@ assert_service() {
   local expected="$1"
   local role="$2"
   local domain="$3"
-  local query="$4"
+  local payload="$4"
 
   local response
   response="$(curl --fail --silent "${BASE_URL}/route" \
@@ -26,7 +26,7 @@ assert_service() {
     -H "X-User-Roles: ${role}" \
     -H "X-Service-Domain: ${domain}" \
     -H 'X-Conversation-ID: smoke-test' \
-    -d "{\"query\":\"${query}\"}")"
+    --data "$payload")"
 
   python3 - "$expected" "$response" <<'PY'
 import json
@@ -42,7 +42,23 @@ PY
 }
 
 wait_for_health
-assert_service "streetlight-report" "citizen" "city-services" "The street lamp outside my home is broken"
-assert_service "parking-permit" "citizen" "mobility" "Renew my residential parking permit"
-assert_service "invoice-processing" "finance-user" "finance" "Extract the total from this supplier invoice"
-assert_service "general-intake" "citizen" "city-services" "I have a question that does not match a known service"
+assert_service \
+  "streetlight-report" \
+  "citizen" \
+  "infrastructure" \
+  '{"query":"The street lamp outside my home is broken"}'
+assert_service \
+  "parking-permit" \
+  "citizen" \
+  "mobility" \
+  '{"query":"Renew my residential parking permit"}'
+assert_service \
+  "invoice-processing" \
+  "finance-user" \
+  "finance" \
+  '{"query":"Extract the total from this supplier invoice","invoice_number":"INV-1001","amount":125.50}'
+assert_service \
+  "general-intake" \
+  "citizen" \
+  "general" \
+  '{"query":"I have a question that does not match a known service"}'
