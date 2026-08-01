@@ -25,15 +25,16 @@ jobs:
         run: |
           set -euo pipefail
 
-          for file in .bootstrap/part002a .bootstrap/part002b; do
-            printf '%s %s ' "$(basename "$file")" "$(wc -c < "$file")"
-            git hash-object "$file"
+          for file in .bootstrap/part002a0 .bootstrap/part002a1 .bootstrap/part002a2 .bootstrap/part002b; do
+            test "$(wc -c < "$file")" -eq 1000 || { echo "unexpected size: $file"; exit 1; }
           done
 
           cat \
             .bootstrap/part000 \
             .bootstrap/part001 \
-            .bootstrap/part002a \
+            .bootstrap/part002a0 \
+            .bootstrap/part002a1 \
+            .bootstrap/part002a2 \
             .bootstrap/part002b \
             .bootstrap/part003 \
             .bootstrap/part004 \
