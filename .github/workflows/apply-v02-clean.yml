@@ -1,25 +1,27 @@
 name: apply-v02-clean
 
 on:
-  push:
+  pull_request:
     branches:
-      - agent/v0.2-clean-implementation
+      - main
 
 permissions:
   contents: write
 
 jobs:
   apply:
-    if: ${{ !contains(github.event.head_commit.message, '[v0.2 applied]') }}
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository && !contains(github.event.pull_request.title, '[v0.2 applied]') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: agent/v0.2-clean-implementation
+          ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
 
       - name: Verify and publish clean v0.2 source
         shell: bash
+        env:
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
         run: |
           set -euo pipefail
 
@@ -36,4 +38,4 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           git commit -m "Add HybridRoute v0.2 advanced routing and benchmark [v0.2 applied]"
-          git push origin HEAD:agent/v0.2-clean-implementation
+          git push origin "HEAD:${HEAD_BRANCH}"
