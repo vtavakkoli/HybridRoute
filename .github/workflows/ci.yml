@@ -27,8 +27,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Build and start the complete demo
-        run: docker compose up --build --detach
+      - name: Build and start the smoke-test stack
+        run: docker compose up --build --detach hybridroute
       - name: Run end-to-end routing checks
         run: bash ./scripts/smoke-test.sh
       - name: Show container logs
