@@ -25,6 +25,11 @@ jobs:
         run: |
           set -euo pipefail
 
+          for file in .bootstrap/part002a .bootstrap/part002b; do
+            printf '%s %s ' "$(basename "$file")" "$(wc -c < "$file")"
+            git hash-object "$file"
+          done
+
           cat \
             .bootstrap/part000 \
             .bootstrap/part001 \
