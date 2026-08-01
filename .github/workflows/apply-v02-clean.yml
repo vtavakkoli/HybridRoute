@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   apply:
-    if: ${{ github.event.pull_request.head.repo.full_name == github.repository && !contains(github.event.pull_request.title, '[v0.2 applied]') }}
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -24,6 +24,11 @@ jobs:
           HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
         run: |
           set -euo pipefail
+
+          if [[ ! -d .bootstrap ]]; then
+            echo "Clean v0.2 source is already published."
+            exit 0
+          fi
 
           for file in .bootstrap/part002a0 .bootstrap/part002a1 .bootstrap/part002a2; do
             test "$(wc -c < "$file")" -eq 1000 || { echo "unexpected size: $file"; exit 1; }
@@ -48,10 +53,11 @@ jobs:
           echo "2864a40ff8e16dfcccc04e5a0ef059256dcb9edf95c6fe845d369fae53f46316  /tmp/hrv2-clean.tar.gz" | sha256sum --check --strict
           gzip --test /tmp/hrv2-clean.tar.gz
           tar -tzf /tmp/hrv2-clean.tar.gz >/dev/null
-          tar -xzf /tmp/hrv2-clean.tar.gz
 
+          cp .github/workflows/ci.yml /tmp/ci.yml
+          tar -xzf /tmp/hrv2-clean.tar.gz
+          cp /tmp/ci.yml .github/workflows/ci.yml
           rm -rf .bootstrap
-          rm -f .github/workflows/apply-v02-clean.yml
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
