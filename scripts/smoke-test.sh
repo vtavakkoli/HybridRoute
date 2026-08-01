@@ -58,7 +58,7 @@ assert_service \
   "finance" \
   '{"query":"Extract the total from this supplier invoice","invoice_number":"INV-1001","amount":125.50}'
 assert_service \
-  "general-intake" \
+  "water-leak" \
   "citizen" \
-  "general" \
-  '{"query":"I have a question that does not match a known service"}'
+  "utilities" \
+  '{"query":"A water main pipe is leaking and flooding the road"}'
