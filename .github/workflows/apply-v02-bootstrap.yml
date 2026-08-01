@@ -25,6 +25,11 @@ jobs:
         run: |
           set -euo pipefail
 
+          for file in .bootstrap/part*; do
+            printf '%s ' "$(basename "$file")"
+            git hash-object "$file"
+          done
+
           cat .bootstrap/part* | base64 --decode > /tmp/hybridroute-v02.tar.gz
           sha256sum /tmp/hybridroute-v02.tar.gz
           gzip --test /tmp/hybridroute-v02.tar.gz
