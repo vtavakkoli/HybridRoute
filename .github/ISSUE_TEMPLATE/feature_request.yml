@@ -1,0 +1,86 @@
+name: Feature request
+description: Propose a focused routing, reliability, observability, or developer-experience improvement
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Explain the problem before proposing an implementation. Large architectural changes should describe policy, safety, compatibility, and benchmark impact.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: Describe the user or operator problem and the current limitation.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the desired behavior, not only a preferred implementation.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Primary area
+      options:
+        - Retrieval or ranking
+        - Policy or authorization context
+        - Ambiguity or fallback handling
+        - Proxy behavior
+        - Embedding backend
+        - Health or circuit breaker
+        - Hot reload or configuration
+        - Feedback or adaptation
+        - Metrics or tracing
+        - Benchmark or testing
+        - Documentation or developer experience
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: safety
+    attributes:
+      label: Safety and policy impact
+      description: Explain how the proposal affects eligibility, high-impact routes, exploration, fallback, credentials, forwarded headers, or sensitive data. State "None" when not applicable.
+    validations:
+      required: true
+
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility and migration
+      description: Describe API, TOML configuration, deployment, or behavior changes. State "None" when not applicable.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Describe simpler approaches, configuration-only solutions, or existing behavior that was considered.
+
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation plan
+      description: Describe tests, smoke scenarios, and benchmark evidence that would demonstrate the feature works safely.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues and pull requests for a similar proposal.
+          required: true
+        - label: The proposal preserves policy filtering before semantic ranking, or clearly explains a replacement safety model.
+          required: true
