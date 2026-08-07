@@ -28,7 +28,7 @@ notify = "8.2"
 opentelemetry = { version = "0.30", optional = true }
 opentelemetry_sdk = { version = "0.30", optional = true, features = ["rt-tokio"] }
 opentelemetry-otlp = { version = "0.30", optional = true, features = ["trace", "metrics", "grpc-tonic"] }
-prometheus-client = "0.24"
+prometheus-client = "0.25"
 rand = "0.9"
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 serde = { version = "1.0", features = ["derive"] }
