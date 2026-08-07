@@ -26,7 +26,7 @@ http = "1.3"
 moka = { version = "0.12", features = ["future"] }
 notify = "8.2"
 opentelemetry = { version = "0.30", optional = true }
-opentelemetry_sdk = { version = "0.30", optional = true, features = ["rt-tokio"] }
+opentelemetry_sdk = { version = "0.32", optional = true, features = ["rt-tokio"] }
 opentelemetry-otlp = { version = "0.30", optional = true, features = ["trace", "metrics", "grpc-tonic"] }
 prometheus-client = "0.24"
 rand = "0.9"
